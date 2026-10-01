@@ -459,9 +459,53 @@ function openForward(email) {
   });
 }
 
+const EMAIL_TYPE_SEND = 1
+
+// 回复时用「这封邮件所属的账号」发件，而不是顶栏当前选中账号（默认 ADMIN）。
+// accountId 只在完整邮件行里有（摘要列 emailBriefColumns 不含该字段），
+// 拿不到时返回 null，由 open() 回落到默认账号。
+function replySender(email) {
+  if (!email?.accountId) {
+    return null
+  }
+  // 已发送的邮件：accountId 是当初发件用的账号，sendEmail 才是自己的地址
+  if (email.type === EMAIL_TYPE_SEND) {
+    return {
+      sendEmail: email.sendEmail,
+      accountId: email.accountId,
+      name: email.toName || emailUtilsName(email.sendEmail)
+    }
+  }
+  // 收件：收件账号地址优先取 toEmail，其次 recipient JSON 的第一项
+  let address = email.toEmail
+  if (!address && email.recipient) {
+    try {
+      address = JSON.parse(email.recipient)[0]?.address
+    } catch (e) {
+      address = ''
+    }
+  }
+  if (!address) {
+    return null
+  }
+  return {
+    sendEmail: address,
+    accountId: email.accountId,
+    name: email.toName || emailUtilsName(address)
+  }
+}
+
+function emailUtilsName(address) {
+  return String(address || '').split('@')[0]
+}
+
 function openReply(email) {
 
   resetForm();
+
+  if (!email) {
+    return
+  }
 
   email.subject = email.subject || ''
 
@@ -473,6 +517,13 @@ function openReply(email) {
       email.subject.startsWith('回复:')) ? email.subject : 'Re: ' + email.subject
   form.sendType = 'reply'
   form.emailId = email.emailId
+
+  const sender = replySender(email)
+  if (sender) {
+    form.sendEmail = sender.sendEmail
+    form.accountId = sender.accountId
+    form.name = sender.name
+  }
 
   defValue.value = ''
 
@@ -488,7 +539,7 @@ function openReply(email) {
           ${formatImage(email.content) || `<pre style="font-family: inherit;word-break: break-word;white-space: pre-wrap;margin: 0">${email.text}</pre>`}
       </article>
     </blockquote>`
-    open()
+    open(!!sender)
 
     nextTick(() => {
       backReply.content = editor.value.getContent()
@@ -506,7 +557,14 @@ function formatImage(content) {
   return content.replace(/{{domain}}/g, toOssDomain(domain) + '/');
 }
 
-function open() {
+// keepSender 为 true 时保留调用方已写入的发件账号（回复场景），
+// 否则按顶栏当前账号 / 登录用户账号重新赋值。
+function open(keepSender = false) {
+  if (keepSender && form.sendEmail && form.accountId !== -1) {
+    show.value = true;
+    editor.value.focus()
+    return
+  }
   if (!accountStore.currentAccount.email) {
     form.sendEmail = userStore.user.email;
     form.accountId = userStore.user.account.accountId;

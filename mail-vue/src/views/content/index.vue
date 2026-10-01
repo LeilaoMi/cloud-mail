@@ -169,7 +169,9 @@ function handleKeyDown(event) {
 }
 
 function openReply() {
-  uiStore.writerRef.openReply(email.value)
+  // 列表摘要行不含 accountId，回复要靠它决定发件账号，先换成完整邮件
+  const full = emailStore.detailMap[email.value?.emailId]
+  uiStore.writerRef.openReply(full || email.value)
 }
 
 function openForward() {
