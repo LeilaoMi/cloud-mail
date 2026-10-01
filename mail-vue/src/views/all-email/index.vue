@@ -285,7 +285,8 @@ function jumpContent(email) {
   emailStore.contentData.email = emailStore.toContentEmail(email)
   emailStore.contentData.delType = 'physics'
   emailStore.contentData.showStar = false
-  emailStore.contentData.showReply = false
+  // 全部邮件允许回复；replySender 会校验账号归属，非本人账号自动回落
+  emailStore.contentData.showReply = true
   router.push({name: 'content'})
 }
 

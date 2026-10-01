@@ -461,11 +461,24 @@ function openForward(email) {
 
 const EMAIL_TYPE_SEND = 1
 
+// 全部邮件页能查到别人邮箱的邮件，后端 send() 会校验 accountRow.userId === 当前用户，
+// 借别人的账号发件会被拒（sendEmailNotCurUser）。userEmail 只在 allEmail/list 返回，
+// 有值说明这封邮件属于该用户；和当前用户不一致就不接管发件账号。
+function isOwnEmail(email) {
+  if (!email.userEmail) {
+    return true
+  }
+  return String(email.userEmail).toLowerCase() === String(userStore.user.email || '').toLowerCase()
+}
+
 // 回复时用「这封邮件所属的账号」发件，而不是顶栏当前选中账号（默认 ADMIN）。
 // accountId 只在完整邮件行里有（摘要列 emailBriefColumns 不含该字段），
 // 拿不到时返回 null，由 open() 回落到默认账号。
 function replySender(email) {
   if (!email?.accountId) {
+    return null
+  }
+  if (!isOwnEmail(email)) {
     return null
   }
   // 已发送的邮件：accountId 是当初发件用的账号，sendEmail 才是自己的地址
