@@ -237,6 +237,7 @@ const form = reactive({
   emailId: 0,
   attachments: [],
   draftId: null,
+  replyAs: '',
 })
 
 const selectRecipientList = ref([])
@@ -590,6 +591,7 @@ function resetForm() {
   form.sendType = ''
   form.emailId = 0
   form.draftId = null
+  form.replyAs = ''
   backReply.content = ''
   backReply.subject = ''
   backReply.receiveEmail = []
@@ -649,6 +651,21 @@ function isOwnEmail(email) {
 // accountId 只在完整邮件行里有（摘要列 emailBriefColumns 不含该字段），
 // 拿不到时返回 null，由 open() 回落到默认账号。
 function replySender(email) {
+  // catch-all 收到、没有对应账号的邮件（accountId=0，只在全部邮件页可见）：
+  // 用原收件地址回信，记录挂在当前登录用户的默认账号下，由后端校验管理员身份和域名。
+  if (email?.accountId === 0 && email.type !== EMAIL_TYPE_SEND) {
+    const address = recipientAddress(email)
+    const ownAccountId = userStore.user.account?.accountId
+    if (address && ownAccountId) {
+      return {
+        sendEmail: address,
+        accountId: ownAccountId,
+        replyAs: address,
+        name: emailUtilsName(address)
+      }
+    }
+    return null
+  }
   if (!email?.accountId) {
     return null
   }
@@ -664,14 +681,7 @@ function replySender(email) {
     }
   }
   // 收件：收件账号地址优先取 toEmail，其次 recipient JSON 的第一项
-  let address = email.toEmail
-  if (!address && email.recipient) {
-    try {
-      address = JSON.parse(email.recipient)[0]?.address
-    } catch (e) {
-      address = ''
-    }
-  }
+  const address = recipientAddress(email)
   if (!address) {
     return null
   }
@@ -680,6 +690,18 @@ function replySender(email) {
     accountId: email.accountId,
     name: email.toName || emailUtilsName(address)
   }
+}
+
+function recipientAddress(email) {
+  let address = email.toEmail
+  if (!address && email.recipient) {
+    try {
+      address = JSON.parse(email.recipient)[0]?.address
+    } catch (e) {
+      address = ''
+    }
+  }
+  return address || ''
 }
 
 function emailUtilsName(address) {
@@ -710,6 +732,7 @@ function openReply(email) {
     form.sendEmail = sender.sendEmail
     form.accountId = sender.accountId
     form.name = sender.name
+    form.replyAs = sender.replyAs || ''
   }
 
   defValue.value = ''

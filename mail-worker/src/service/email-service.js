@@ -370,7 +370,8 @@ const emailService = {
 			text, //邮件纯文本
 			content, //邮件内容
 			subject, //邮件标题
-			attachments = [] //附件
+			attachments = [], //附件
+			replyAs //回复 catch-all 无账号邮件时使用的发件地址（仅管理员）
 		} = params;
 
 		ccEmail = this.normalizeAddressList(ccEmail);
@@ -454,20 +455,6 @@ const emailService = {
 
 		}
 
-		const domain = emailUtils.getDomain(accountRow.email);
-		const resendToken = resendTokens[domain];
-		const useCloudflareEmail = !!c.env.email;
-
-		//如果接收方存在站外邮箱，又没有发信服务
-		if (!useCloudflareEmail && !resendToken && !allInternal) {
-			throw new BizError(t('noSendProvider'));
-		}
-
-		//没有发件人名字自动截取
-		if (!name) {
-			name = emailUtils.getName(accountRow.email);
-		}
-
 		let emailRow = {
 			messageId: null
 		};
@@ -483,9 +470,40 @@ const emailService = {
 
 		}
 
+		// 发件地址默认是账号地址。管理员回复 catch-all 收到、没有对应账号的邮件时，
+		// 用这封邮件的原收件地址发信（记录仍挂在管理员自己的账号下）。
+		let senderEmail = accountRow.email;
+		if (replyAs) {
+			const replyAddress = String(replyAs).trim().toLowerCase();
+			const replyDomain = emailUtils.getDomain(replyAddress);
+			if (sendType !== 'reply'
+				|| c.env.admin !== userRow.email
+				|| emailRow.accountId !== 0
+				|| emailRow.type !== emailConst.type.RECEIVE
+				|| String(emailRow.toEmail || '').trim().toLowerCase() !== replyAddress
+				|| !c.env.domain.includes(replyDomain)) {
+				throw new BizError(t('sendEmailNotCurUser'), 403);
+			}
+			senderEmail = replyAddress;
+		}
+
+		const domain = emailUtils.getDomain(senderEmail);
+		const resendToken = resendTokens[domain];
+		const useCloudflareEmail = !!c.env.email;
+
+		//如果接收方存在站外邮箱，又没有发信服务
+		if (!useCloudflareEmail && !resendToken && !allInternal) {
+			throw new BizError(t('noSendProvider'));
+		}
+
+		//没有发件人名字自动截取
+		if (!name) {
+			name = emailUtils.getName(senderEmail);
+		}
+
 		const sendParams = {
 			name,
-			accountEmail: accountRow.email,
+			accountEmail: senderEmail,
 			receiveEmail,
 			ccEmail,
 			bccEmail,
@@ -516,7 +534,7 @@ const emailService = {
 			separate, allInternal, useCloudflareEmail, resendToken, sendParams,
 			saveParams: {
 				accountId, userId, name, subject, text, html,
-				sendEmail: accountRow.email,
+				sendEmail: senderEmail,
 				ccEmail, bccEmail,
 				messageId: emailRow.messageId,
 				sendType, useCloudflareEmail, roleRow, r2Domain,
